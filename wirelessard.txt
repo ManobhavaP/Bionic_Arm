@@ -1,0 +1,101 @@
+#include <SoftwareSerial.h>
+#include <Servo.h>
+
+// Create servo objects
+Servo servo1, servo2, servo3, servo4, servo5;
+
+// Define servo pins
+const int servoPin1 = 9;
+const int servoPin2 = 3;
+const int servoPin3 = 10;
+const int servoPin4 = 5;
+const int servoPin5 = 11;
+
+// ESP8266 connection
+SoftwareSerial esp8266(2, 3); // RX, TX
+
+// WiFi credentials
+const char* ssid = "your_SSID";
+const char* password = "your_PASSWORD";
+
+// Function to send AT command to ESP8266
+void sendATCommand(const char* cmd, unsigned long timeout) {
+  esp8266.println(cmd);
+  unsigned long start = millis();
+  while (millis() - start < timeout) {
+    if (esp8266.available()) {
+      String response = esp8266.readString();
+      Serial.println(response);
+    }
+  }
+}
+
+void setup() {
+  // Attach servos to pins
+  servo1.attach(servoPin1);
+  servo2.attach(servoPin2);
+  servo3.attach(servoPin3);
+  servo4.attach(servoPin4);
+  servo5.attach(servoPin5);
+
+  // Begin serial communication at 9600 baud rate
+  Serial.begin(9600);
+  esp8266.begin(9600); // ESP8266 baud rate
+
+  // Initialize ESP8266
+  sendATCommand("AT", 2000); // Test AT startup
+  sendATCommand("AT+RST", 2000); // Reset module
+  sendATCommand("AT+CWMODE=1", 2000); // Set WiFi mode to station
+  sendATCommand("AT+CWJAP=\"" + String(ssid) + "\",\"" + String(password) + "\"", 5000); // Connect to WiFi
+
+  // Start TCP server on port 80
+  sendATCommand("AT+CIPMUX=1", 2000); // Enable multiple connections
+  sendATCommand("AT+CIPSERVER=1,80", 2000); // Start server on port 80
+}
+
+void loop() {
+  if (esp8266.available()) {
+    String request = esp8266.readStringUntil('\n');
+
+    if (request.indexOf("GET") >= 0 && request.indexOf("handState=") >= 0) {
+      int index = request.indexOf("handState=");
+      String handState = request.substring(index + 10, index + 15);
+
+      if (handState.length() == 5) {
+        // Parse the hand state
+        int thumb = handState[0] - '0';
+        int index = handState[1] - '0';
+        int middle = handState[2] - '0';
+        int ring = handState[3] - '0';
+        int pinky = handState[4] - '0';
+
+        // Print the hand state
+        Serial.print("Hand State: ");
+        Serial.print(thumb);
+        Serial.print(index);
+        Serial.print(middle);
+        Serial.print(ring);
+        Serial.println(pinky);
+
+        // Control the servos based on the hand state
+        updateServo(servo1, thumb);
+        updateServo(servo2, index);
+        updateServo(servo3, middle);
+        updateServo(servo4, ring);
+        updateServo(servo5, pinky);
+
+        // Respond to the client
+        sendATCommand("AT+CIPSEND=0,5", 2000); // Send response to client
+        esp8266.print("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nOK\r\n");
+      }
+    }
+  }
+}
+
+void updateServo(Servo &servo, int state) {
+  if (state == 1) {
+    servo.write(100);  // Bent position (100 degrees)
+  } else {
+    servo.write(0);  // Straight position (0 degrees)
+  }
+}

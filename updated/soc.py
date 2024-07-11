@@ -1,8 +1,8 @@
 import cv2
 import mediapipe as mp
 import math
-import serial
-import serial.tools.list_ports
+import socket
+
 # Function to calculate angle between three points (p1, p2, p3)
 def calculate_angle(p1, p2, p3):
     angle_rad = math.atan2(p3[1] - p2[1], p3[0] - p2[0]) - math.atan2(p1[1] - p2[1], p1[0] - p2[0])
@@ -14,24 +14,11 @@ def update_hand_state(thumb_bent, index_bent, middle_bent, ring_bent, pinky_bent
     hand_state = [int(thumb_bent), int(index_bent), int(middle_bent), int(ring_bent), int(pinky_bent)]
     return hand_state
 
-# Set up serial communication
-ports = serial.tools.list_ports.comports()
-serial_inst = serial.Serial()
-
-ports_list = []
-for port in ports:
-    ports_list.append(str(port))
-    print(str(port))
-
-val = input('Select Port: COM')
-for i in range(len(ports_list)):
-    if ports_list[i].startswith(f'COM{val}'):
-        port_var = f'COM{val}'
-        print(port_var)
-
-serial_inst.baudrate = 9600
-serial_inst.port = port_var
-serial_inst.open()
+# Set up socket communication
+host = '192.168.253.40'  # Replace with your Pico W IP address
+port = 8080
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client_socket.connect((host, port))
 
 # Initialize MediaPipe hands module
 mp_hands = mp.solutions.hands
@@ -88,12 +75,17 @@ while cap.isOpened():
                 index_bent = landmarks[8][1] < landmarks[6][1]
                 middle_bent = landmarks[12][1] < landmarks[10][1]
                 ring_bent = landmarks[16][1] < landmarks[14][1]
-                pinky_bent = landmarks[20][1] < landmarks[18][1]                # Update hand state array
+                pinky_bent = landmarks[20][1] < landmarks[18][1]
+
+                # Update hand state array
                 hand_state = update_hand_state(thumb_bent, index_bent, middle_bent, ring_bent, pinky_bent)
 
-                # Send hand state to Arduino
+                # Print hand state in terminal
+                print("Hand State:", hand_state)
+
+                # Send hand state to Raspberry Pi Pico W
                 hand_state_str = ''.join(map(str, hand_state)) + '\n'
-                serial_inst.write(hand_state_str.encode('utf-8'))
+                client_socket.send(hand_state_str.encode('utf-8'))
 
                 # Display finger status on the image
                 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -116,4 +108,4 @@ while cap.isOpened():
 # Release resources
 cap.release()
 cv2.destroyAllWindows()
-serial_inst.close()
+client_socket.close()
